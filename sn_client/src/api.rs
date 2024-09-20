@@ -104,7 +104,7 @@ impl Client {
         let root_dir = std::env::temp_dir();
         trace!("Starting Kad swarm in client mode..{root_dir:?}.");
 
-        let network_builder = NetworkBuilder::new(Keypair::generate_ed25519(), local, root_dir);
+        let network_builder = NetworkBuilder::new(Keypair::generate_ed25519(), local, None);
 
         let (network, mut network_event_receiver, swarm_driver) = network_builder.build_client()?;
         info!("Client constructed network and swarm_driver");

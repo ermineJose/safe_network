@@ -159,7 +159,7 @@ struct NetworkInner {
     network_swarm_cmd_sender: mpsc::Sender<NetworkSwarmCmd>,
     local_swarm_cmd_sender: mpsc::Sender<LocalSwarmCmd>,
     peer_id: PeerId,
-    root_dir_path: PathBuf,
+    root_dir_path: Option<PathBuf>,
     keypair: Keypair,
 }
 
@@ -168,7 +168,7 @@ impl Network {
         network_swarm_cmd_sender: mpsc::Sender<NetworkSwarmCmd>,
         local_swarm_cmd_sender: mpsc::Sender<LocalSwarmCmd>,
         peer_id: PeerId,
-        root_dir_path: PathBuf,
+        root_dir_path: Option<PathBuf>,
         keypair: Keypair,
     ) -> Self {
         Self {
@@ -193,8 +193,16 @@ impl Network {
     }
 
     /// Returns the root directory path of the instance.
-    pub fn root_dir_path(&self) -> &PathBuf {
-        &self.inner.root_dir_path
+    pub fn root_dir_path(&self) -> Option<&PathBuf> {
+        match &self.inner.root_dir_path {
+            Some(v) => {
+                Some(v)
+            }
+            None => {
+                None
+            }
+        }
+        // &self.inner.root_dir_path
     }
 
     /// Get the sender to send a `NetworkSwarmCmd` to the underlying `Swarm`.
@@ -1104,7 +1112,7 @@ mod tests {
     #[test]
     fn test_network_sign_verify() -> eyre::Result<()> {
         let (network, _, _) =
-            NetworkBuilder::new(Keypair::generate_ed25519(), false, std::env::temp_dir())
+            NetworkBuilder::new(Keypair::generate_ed25519(), false, Some(std::env::temp_dir()))
                 .build_client()?;
         let msg = b"test message";
         let sig = network.sign(msg)?;
