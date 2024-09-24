@@ -10,6 +10,7 @@ use tokio::{sync::mpsc::Receiver, time::interval};
 #[cfg(feature = "data")]
 #[cfg_attr(docsrs, doc(cfg(feature = "data")))]
 mod data;
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg(feature = "files")]
 #[cfg_attr(docsrs, doc(cfg(feature = "files")))]
 mod files;
