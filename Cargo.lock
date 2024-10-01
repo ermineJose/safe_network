@@ -1251,6 +1251,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "console_log"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e89f72f65e8501878b8a004d5a1afb780987e2ce2b4532c562e367a72c57499f"
+dependencies = [
+ "log",
+ "web-sys",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3739,12 +3749,17 @@ dependencies = [
  "bip39",
  "blsttc",
  "bytes",
+ "console_log",
+ "futures",
+ "getrandom 0.2.15",
  "libp2p",
+ "log",
  "rand 0.8.5",
  "rmp-serde",
  "self_encryption",
  "serde",
  "sn_client",
+ "sn_networking",
  "sn_protocol",
  "sn_transfers",
  "thiserror",
@@ -3752,7 +3767,11 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "walkdir",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "wasm-bindgen-test",
+ "wasmtimer",
+ "web-sys",
  "xor_name",
 ]
 

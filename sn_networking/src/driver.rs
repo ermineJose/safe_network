@@ -30,6 +30,7 @@ use crate::{
     },
     GetRecordError, Network, CLOSE_GROUP_SIZE,
 };
+use crate::NetworkClient;
 use crate::{transport, NodeIssue};
 use futures::future::Either;
 use futures::StreamExt;
@@ -204,6 +205,397 @@ pub(super) struct NodeBehaviour {
     pub(super) kademlia: kad::Behaviour<UnifiedRecordStore>,
     pub(super) request_response: request_response::cbor::Behaviour<Request, Response>,
 }
+
+#[derive(Debug)]
+pub struct NetworkBuilderClient {
+    is_behind_home_network: bool,
+    keypair: Keypair,
+    local: bool,
+    listen_addr: Option<SocketAddr>,
+    request_timeout: Option<Duration>,
+    concurrency_limit: Option<usize>,
+    initial_peers: Vec<Multiaddr>,
+    #[cfg(feature = "open-metrics")]
+    metrics_metadata_registry: Option<Registry>,
+    #[cfg(feature = "open-metrics")]
+    metrics_registry: Option<Registry>,
+    #[cfg(feature = "open-metrics")]
+    metrics_server_port: Option<u16>,
+    #[cfg(feature = "upnp")]
+    upnp: bool,
+}
+
+impl NetworkBuilderClient {
+    pub fn new(keypair: Keypair, local: bool) -> Self {
+        Self {
+            is_behind_home_network: false,
+            keypair,
+            local,
+            // root_dir,
+            listen_addr: None,
+            request_timeout: None,
+            concurrency_limit: None,
+            initial_peers: Default::default(),
+            #[cfg(feature = "open-metrics")]
+            metrics_metadata_registry: None,
+            #[cfg(feature = "open-metrics")]
+            metrics_registry: None,
+            #[cfg(feature = "open-metrics")]
+            metrics_server_port: None,
+            #[cfg(feature = "upnp")]
+            upnp: false,
+        }
+    }
+
+    pub fn is_behind_home_network(&mut self, enable: bool) {
+        self.is_behind_home_network = enable;
+    }
+
+    pub fn listen_addr(&mut self, listen_addr: SocketAddr) {
+        self.listen_addr = Some(listen_addr);
+    }
+
+    pub fn request_timeout(&mut self, request_timeout: Duration) {
+        self.request_timeout = Some(request_timeout);
+    }
+
+    pub fn concurrency_limit(&mut self, concurrency_limit: usize) {
+        self.concurrency_limit = Some(concurrency_limit);
+    }
+
+    pub fn initial_peers(&mut self, initial_peers: Vec<Multiaddr>) {
+        self.initial_peers = initial_peers;
+    }
+
+    /// Set the Registry that will be served at the `/metadata` endpoint. This Registry should contain only the static
+    /// info about the peer. Configure the `metrics_server_port` to enable the metrics server.
+    #[cfg(feature = "open-metrics")]
+    pub fn metrics_metadata_registry(&mut self, metrics_metadata_registry: Registry) {
+        self.metrics_metadata_registry = Some(metrics_metadata_registry);
+    }
+
+    /// Set the Registry that will be served at the `/metrics` endpoint.
+    /// Configure the `metrics_server_port` to enable the metrics server.
+    #[cfg(feature = "open-metrics")]
+    pub fn metrics_registry(&mut self, metrics_registry: Registry) {
+        self.metrics_registry = Some(metrics_registry);
+    }
+
+    #[cfg(feature = "open-metrics")]
+    /// The metrics server is enabled only if the port is provided.
+    pub fn metrics_server_port(&mut self, port: Option<u16>) {
+        self.metrics_server_port = port;
+    }
+
+    #[cfg(feature = "upnp")]
+    pub fn upnp(&mut self, upnp: bool) {
+        self.upnp = upnp;
+    }
+
+    /// Creates a new `SwarmDriver` instance, along with a `Network` handle
+    /// for sending commands and an `mpsc::Receiver<NetworkEvent>` for receiving
+    /// network events. It initializes the swarm, sets up the transport, and
+    /// configures the Kademlia and mDNS behaviour for peer discovery.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing a `Network` handle, an `mpsc::Receiver<NetworkEvent>`,
+    /// and a `SwarmDriver` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there is a problem initializing the mDNS behaviour.
+
+    /// Same as `build_node` API but creates the network components in client mode
+    pub fn build_client(self) -> Result<(NetworkClient, mpsc::Receiver<NetworkEvent>, SwarmDriver)> {
+        // Create a Kademlia behaviour for client mode, i.e. set req/resp protocol
+        // to outbound-only mode and don't listen on any address
+        let mut kad_cfg = kad::Config::default(); // default query timeout is 60 secs
+
+        // 1mb packet size
+        let _ = kad_cfg
+            .set_kbucket_inserts(libp2p::kad::BucketInserts::Manual)
+            .set_max_packet_size(MAX_PACKET_SIZE)
+            // Require iterative queries to use disjoint paths for increased resiliency in the presence of potentially adversarial nodes.
+            .disjoint_query_paths(true)
+            // How many nodes _should_ store data.
+            .set_replication_factor(
+                NonZeroUsize::new(CLOSE_GROUP_SIZE)
+                    .ok_or_else(|| NetworkError::InvalidCloseGroupSize)?,
+            );
+
+        let (network, net_event_recv, driver) = self.build(
+            kad_cfg,
+            None,
+            true,
+            ProtocolSupport::Outbound,
+            IDENTIFY_CLIENT_VERSION_STR.to_string(),
+            #[cfg(feature = "upnp")]
+            false,
+        )?;
+
+        Ok((network, net_event_recv, driver))
+    }
+
+    /// Private helper to create the network components with the provided config and req/res behaviour
+    fn build(
+        self,
+        kad_cfg: kad::Config,
+        record_store_cfg: Option<NodeRecordStoreConfig>,
+        is_client: bool,
+        req_res_protocol: ProtocolSupport,
+        identify_version: String,
+        #[cfg(feature = "upnp")] upnp: bool,
+    ) -> Result<(NetworkClient, mpsc::Receiver<NetworkEvent>, SwarmDriver)> {
+        let peer_id = PeerId::from(self.keypair.public());
+        // vdash metric (if modified please notify at https://github.com/happybeing/vdash/issues):
+        #[cfg(not(target_arch = "wasm32"))]
+        info!(
+            "Process (PID: {}) with PeerId: {peer_id}",
+            std::process::id()
+        );
+        info!(
+            "Self PeerID {peer_id} is represented as kbucket_key {:?}",
+            PrettyPrintKBucketKey(NetworkAddress::from_peer(peer_id).as_kbucket_key())
+        );
+
+        #[cfg(feature = "open-metrics")]
+        let mut metrics_registry = self.metrics_registry.unwrap_or_default();
+
+        // ==== Transport ====
+        #[cfg(feature = "open-metrics")]
+        let main_transport = transport::build_transport(&self.keypair, &mut metrics_registry);
+        #[cfg(not(feature = "open-metrics"))]
+        let main_transport = transport::build_transport(&self.keypair);
+        let transport = if !self.local {
+            debug!("Preventing non-global dials");
+            // Wrap upper in a transport that prevents dialing local addresses.
+            libp2p::core::transport::global_only::Transport::new(main_transport).boxed()
+        } else {
+            main_transport
+        };
+
+        let (relay_transport, relay_behaviour) =
+            libp2p::relay::client::new(self.keypair.public().to_peer_id());
+        let relay_transport = relay_transport
+            .upgrade(libp2p::core::upgrade::Version::V1Lazy)
+            .authenticate(
+                libp2p::noise::Config::new(&self.keypair)
+                    .expect("Signing libp2p-noise static DH keypair failed."),
+            )
+            .multiplex(libp2p::yamux::Config::default())
+            .or_transport(transport);
+
+        let transport = relay_transport
+            .map(|either_output, _| match either_output {
+                Either::Left((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
+                Either::Right((peer_id, muxer)) => (peer_id, StreamMuxerBox::new(muxer)),
+            })
+            .boxed();
+
+        #[cfg(feature = "open-metrics")]
+        let network_metrics = if let Some(port) = self.metrics_server_port {
+            let network_metrics = NetworkMetricsRecorder::new(&mut metrics_registry);
+            let mut metadata_registry = self.metrics_metadata_registry.unwrap_or_default();
+            let network_metadata_sub_registry =
+                metadata_registry.sub_registry_with_prefix("sn_networking");
+
+            network_metadata_sub_registry.register(
+                "peer_id",
+                "Identifier of a peer of the network",
+                Info::new(vec![("peer_id".to_string(), peer_id.to_string())]),
+            );
+            network_metadata_sub_registry.register(
+                "identify_protocol_str",
+                "The protocol version string that is used to connect to the correct network",
+                Info::new(vec![(
+                    "identify_protocol_str".to_string(),
+                    IDENTIFY_PROTOCOL_STR.to_string(),
+                )]),
+            );
+
+            run_metrics_server(metrics_registry, metadata_registry, port);
+            Some(network_metrics)
+        } else {
+            None
+        };
+
+        // RequestResponse Behaviour
+        let request_response = {
+            let cfg = RequestResponseConfig::default()
+                .with_request_timeout(self.request_timeout.unwrap_or(REQUEST_TIMEOUT_DEFAULT_S));
+
+            info!(
+                "Building request response with {:?}",
+                REQ_RESPONSE_VERSION_STR.as_str()
+            );
+            request_response::cbor::Behaviour::new(
+                [(
+                    StreamProtocol::new(&REQ_RESPONSE_VERSION_STR),
+                    req_res_protocol,
+                )],
+                cfg,
+            )
+        };
+
+        let (network_event_sender, network_event_receiver) = mpsc::channel(NETWORKING_CHANNEL_SIZE);
+        let (network_swarm_cmd_sender, network_swarm_cmd_receiver) =
+            mpsc::channel(NETWORKING_CHANNEL_SIZE);
+        let (local_swarm_cmd_sender, local_swarm_cmd_receiver) =
+            mpsc::channel(NETWORKING_CHANNEL_SIZE);
+
+        // Kademlia Behaviour
+        let kademlia = {
+            match record_store_cfg {
+                Some(store_cfg) => {
+                    let node_record_store = NodeRecordStore::with_config(
+                        peer_id,
+                        store_cfg,
+                        network_event_sender.clone(),
+                        local_swarm_cmd_sender.clone(),
+                    );
+                    #[cfg(feature = "open-metrics")]
+                    let mut node_record_store = node_record_store;
+                    #[cfg(feature = "open-metrics")]
+                    if let Some(metrics) = &network_metrics {
+                        node_record_store = node_record_store
+                            .set_record_count_metric(metrics.records_stored.clone());
+                    }
+
+                    let store = UnifiedRecordStore::Node(node_record_store);
+                    debug!("Using Kademlia with NodeRecordStore!");
+                    kad::Behaviour::with_config(peer_id, store, kad_cfg)
+                }
+                // no cfg provided for client
+                None => {
+                    let store = UnifiedRecordStore::Client(ClientRecordStore::default());
+                    debug!("Using Kademlia with ClientRecordStore!");
+                    kad::Behaviour::with_config(peer_id, store, kad_cfg)
+                }
+            }
+        };
+
+        #[cfg(feature = "local-discovery")]
+        let mdns_config = mdns::Config {
+            // lower query interval to speed up peer discovery
+            // this increases traffic, but means we no longer have clients unable to connect
+            // after a few minutes
+            query_interval: Duration::from_secs(5),
+            ..Default::default()
+        };
+
+        #[cfg(feature = "local-discovery")]
+        let mdns = mdns::tokio::Behaviour::new(mdns_config, peer_id)?;
+
+        // Identify Behaviour
+        let identify_protocol_str = IDENTIFY_PROTOCOL_STR.to_string();
+        info!("Building Identify with identify_protocol_str: {identify_protocol_str:?} and identify_version: {identify_version:?}");
+        let identify = {
+            let mut cfg =
+                libp2p::identify::Config::new(identify_protocol_str, self.keypair.public())
+                    .with_agent_version(identify_version);
+            // Enlength the identify interval from default 5 mins to 1 hour.
+            cfg.interval = RESEND_IDENTIFY_INVERVAL;
+            libp2p::identify::Behaviour::new(cfg)
+        };
+
+        #[cfg(feature = "upnp")]
+        let upnp = if !self.local && !is_client && upnp {
+            debug!("Enabling UPnP port opening behavior");
+            Some(libp2p::upnp::tokio::Behaviour::default())
+        } else {
+            None
+        }
+        .into(); // Into `Toggle<T>`
+
+        let relay_server = {
+            let relay_server_cfg = relay::Config {
+                max_reservations: 128,             // Amount of peers we are relaying for
+                max_circuits: 1024, // The total amount of relayed connections at any given moment.
+                max_circuits_per_peer: 256, // Amount of relayed connections per peer (both dst and src)
+                circuit_src_rate_limiters: vec![], // No extra rate limiting for now
+                ..Default::default()
+            };
+            libp2p::relay::Behaviour::new(peer_id, relay_server_cfg)
+        };
+
+        let behaviour = NodeBehaviour {
+            blocklist: libp2p::allow_block_list::Behaviour::default(),
+            relay_client: relay_behaviour,
+            relay_server,
+            #[cfg(feature = "upnp")]
+            upnp,
+            request_response,
+            kademlia,
+            identify,
+            #[cfg(feature = "local-discovery")]
+            mdns,
+        };
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let swarm_config = libp2p::swarm::Config::with_tokio_executor()
+            .with_idle_connection_timeout(CONNECTION_KEEP_ALIVE_TIMEOUT);
+        #[cfg(target_arch = "wasm32")]
+        let swarm_config = libp2p::swarm::Config::with_wasm_executor()
+            .with_idle_connection_timeout(CONNECTION_KEEP_ALIVE_TIMEOUT);
+
+        let swarm = Swarm::new(transport, behaviour, peer_id, swarm_config);
+
+        let bootstrap = ContinuousBootstrap::new();
+        let replication_fetcher = ReplicationFetcher::new(peer_id, network_event_sender.clone());
+        let mut relay_manager = RelayManager::new(peer_id);
+        if !is_client {
+            relay_manager.enable_hole_punching(self.is_behind_home_network);
+        }
+
+        let swarm_driver = SwarmDriver {
+            swarm,
+            self_peer_id: peer_id,
+            local: self.local,
+            listen_port: self.listen_addr.map(|addr| addr.port()),
+            is_client,
+            is_behind_home_network: self.is_behind_home_network,
+            peers_in_rt: 0,
+            bootstrap,
+            relay_manager,
+            replication_fetcher,
+            #[cfg(feature = "open-metrics")]
+            network_metrics,
+            // kept here to ensure we can push messages to the channel
+            // and not block the processing thread unintentionally
+            network_cmd_sender: network_swarm_cmd_sender.clone(),
+            network_cmd_receiver: network_swarm_cmd_receiver,
+            local_cmd_sender: local_swarm_cmd_sender.clone(),
+            local_cmd_receiver: local_swarm_cmd_receiver,
+            event_sender: network_event_sender,
+            pending_get_closest_peers: Default::default(),
+            pending_requests: Default::default(),
+            pending_get_record: Default::default(),
+            // We use 255 here which allows covering a network larger than 64k without any rotating.
+            // This is based on the libp2p kad::kBuckets peers distribution.
+            dialed_peers: CircularVec::new(255),
+            network_discovery: NetworkDiscovery::new(&peer_id),
+            bootstrap_peers: Default::default(),
+            live_connected_peers: Default::default(),
+            handling_statistics: Default::default(),
+            handled_times: 0,
+            hard_disk_write_error: 0,
+            bad_nodes: Default::default(),
+            quotes_history: Default::default(),
+            replication_targets: Default::default(),
+        };
+
+        let network = NetworkClient::new(
+            network_swarm_cmd_sender,
+            local_swarm_cmd_sender,
+            peer_id,
+            self.keypair,
+        );
+
+        Ok((network, network_event_receiver, swarm_driver))
+    }
+}
+
 
 #[derive(Debug)]
 pub struct NetworkBuilder {

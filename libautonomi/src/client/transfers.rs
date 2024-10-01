@@ -5,6 +5,8 @@ use sn_transfers::{SpendReason, Transfer};
 
 use sn_transfers::UniquePubkey;
 use std::collections::BTreeSet;
+use sn_networking::NetworkClient;
+
 
 #[derive(Debug, thiserror::Error)]
 pub enum SendSpendsError {
@@ -283,7 +285,7 @@ impl Client {
 }
 
 /// Send a `SpendCashNote` request to the network.
-async fn store_spend(network: Network, spend: SignedSpend) -> Result<(), NetworkError> {
+async fn store_spend(network: NetworkClient, spend: SignedSpend) -> Result<(), NetworkError> {
     let unique_pubkey = *spend.unique_pubkey();
     let cash_note_addr = SpendAddress::from_unique_pubkey(&unique_pubkey);
     let network_address = NetworkAddress::from_spend_address(cash_note_addr);

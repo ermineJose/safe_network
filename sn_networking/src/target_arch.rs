@@ -13,9 +13,9 @@ pub use std::time::Instant;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use tokio::{
-    spawn,
-    time::{interval, sleep, timeout, Duration, Interval},
-};
+     spawn,
+     time::{interval, sleep, timeout, Duration, Interval},
+ };
 
 #[cfg(target_arch = "wasm32")]
 pub use wasmtimer::{

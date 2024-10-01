@@ -24,6 +24,9 @@ members = [
     "token_supplies",
 ]
 
+[build]
+target = "wasm32-unknown-unknown"
+
 [workspace.lints.rust]
 arithmetic_overflow = "forbid"
 mutable_transmutes = "forbid"
