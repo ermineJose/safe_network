@@ -1,6 +1,5 @@
 use crate::client::data::{GetError, PutError};
 use crate::client::Client;
-use crate::self_encryption::encrypt;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use sn_evm::{Amount, AttoTokens};
@@ -61,14 +60,14 @@ pub enum UploadError {
 
 impl Client {
     /// Fetch a directory from the network.
-    pub async fn fetch_root(&mut self, address: XorName) -> Result<Root, UploadError> {
+    pub async fn fetch_root(&self, address: XorName) -> Result<Root, UploadError> {
         let data = self.get(address).await?;
 
         Ok(Root::from_bytes(data)?)
     }
 
     /// Fetch the file pointed to by the given pointer.
-    pub async fn fetch_file(&mut self, file: &FilePointer) -> Result<Bytes, UploadError> {
+    pub async fn fetch_file(&self, file: &FilePointer) -> Result<Bytes, UploadError> {
         let data = self.get(file.data_map).await?;
         Ok(data)
     }
@@ -76,7 +75,7 @@ impl Client {
     /// Get the cost to upload a file/dir to the network.
     /// quick and dirty implementation, please refactor once files are cleanly implemented
     #[cfg(feature = "fs")]
-    pub async fn file_cost(&mut self, path: &PathBuf) -> Result<AttoTokens, UploadError> {
+    pub async fn file_cost(&self, path: &PathBuf) -> Result<AttoTokens, UploadError> {
         let mut map = HashMap::new();
         let mut total_cost = Amount::ZERO;
 
@@ -99,7 +98,7 @@ impl Client {
             // re-do encryption to get the correct map xorname here
             // this code needs refactor
             let now = sn_networking::Instant::now();
-            let (data_map_chunk, _) = encrypt(file_bytes).expect("TODO");
+            let (data_map_chunk, _) = crate::self_encryption::encrypt(file_bytes).expect("TODO");
             tracing::debug!("Encryption took: {:.2?}", now.elapsed());
             let map_xor_name = *data_map_chunk.address().xorname();
             let data_map_xorname = FilePointer {

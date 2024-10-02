@@ -68,27 +68,13 @@ async fn fetch() -> Result<(), Box<dyn std::error::Error>> {
         ))
         .init();
 
-    tracing::info!("Starting test");
-
     let peers = vec![
         "/ip4/127.0.0.1/tcp/41135/ws/p2p/12D3KooWKPW8e4epFe6AWHuTKoWYGpq2egaCzbNNa6kzbBp6D6w6"
             .try_into()
             .expect("str to be valid multiaddr"),
     ];
 
-    let rpc_url = option_env!("RPC_URL").ok_or("")?;
-    let payment_token_address = option_env!("PAYMENT_TOKEN_ADDRESS").ok_or("")?;
-    let chunk_payments_address = option_env!("CHUNK_PAYMENTS_ADDRESS").ok_or("")?;
-
-    let network = Network::Custom(CustomNetwork::new(
-        rpc_url,
-        payment_token_address,
-        chunk_payments_address,
-    ));
-
-    let mut client = Client::connect(&peers).await.unwrap();
-    tracing::info!("CONNECTED");
-    let wallet = evm_wallet_from_env_or_default(network);
+    let client = Client::connect(&peers).await.unwrap();
 
     let addr = autonomi::client::address::str_to_xorname(
         "6425926e2044f3eacbbc3d4d34316295ac8b7e8ad753d99c358a7bf66d778d94",
