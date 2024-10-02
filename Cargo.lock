@@ -1033,6 +1033,7 @@ dependencies = [
  "const-hex",
  "evmlib",
  "eyre",
+ "futures",
  "hex 0.4.3",
  "instant",
  "libp2p 0.54.1",

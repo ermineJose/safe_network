@@ -93,8 +93,16 @@ async fn fetch() -> Result<(), Box<dyn std::error::Error>> {
     let addr = autonomi::client::address::str_to_xorname(
         "6425926e2044f3eacbbc3d4d34316295ac8b7e8ad753d99c358a7bf66d778d94",
     )?;
-    // let addr = autonomi::XorName::from_content(&[0]);
-    let data_fetched = client.get(addr).await.unwrap();
+
+    let data_fetched = client.fetch_root(addr).await.unwrap();
+    tracing::info!("{:?}", data_fetched);
+    let file_pointer = data_fetched
+        .map
+        .get(&std::path::PathBuf::from("README.md"))
+        .unwrap();
+
+    let data_fetched = client.fetch_file(file_pointer).await.unwrap();
+    tracing::info!("{}", String::from_utf8(data_fetched.to_vec()).unwrap());
 
     Ok(())
 }

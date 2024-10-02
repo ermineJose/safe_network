@@ -82,7 +82,7 @@ impl Client {
             }
         });
 
-        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let (sender, receiver) = futures::channel::oneshot::channel();
         sn_networking::target_arch::spawn(handle_event_receiver(event_receiver, sender));
 
         receiver.await.expect("sender should not close")?;
@@ -109,7 +109,7 @@ fn build_client_and_run_swarm(local: bool) -> (Network, Receiver<NetworkEvent>) 
 
 async fn handle_event_receiver(
     mut event_receiver: Receiver<NetworkEvent>,
-    sender: tokio::sync::oneshot::Sender<Result<(), ConnectError>>,
+    sender: futures::channel::oneshot::Sender<Result<(), ConnectError>>,
 ) {
     // We switch this to `None` when we've sent the oneshot 'connect' result.
     let mut sender = Some(sender);
