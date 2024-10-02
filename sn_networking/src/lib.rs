@@ -630,6 +630,18 @@ impl Network {
     /// Put `Record` to network
     /// Optionally verify the record is stored after putting it to network
     /// If verify is on, retry multiple times within MAX_PUT_RETRY_DURATION duration.
+    #[cfg(target_arch = "wasm32")]
+    pub async fn put_record(&self, record: Record, cfg: &PutRecordCfg) -> Result<()> {
+        let pretty_key = PrettyPrintRecordKey::from(&record.key);
+
+        info!("Attempting to PUT record with key: {pretty_key:?} to network, with cfg {cfg:?}");
+        self.put_record_once(record.clone(), cfg).await
+    }
+
+    /// Put `Record` to network
+    /// Optionally verify the record is stored after putting it to network
+    /// If verify is on, retry multiple times within MAX_PUT_RETRY_DURATION duration.
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn put_record(&self, record: Record, cfg: &PutRecordCfg) -> Result<()> {
         let pretty_key = PrettyPrintRecordKey::from(&record.key);
 

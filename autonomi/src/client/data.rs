@@ -155,7 +155,7 @@ impl Client {
     /// Upload a piece of data to the network. This data will be self-encrypted,
     /// and the data map XOR address will be returned.
     pub async fn put(&self, data: Bytes, wallet: &Wallet) -> Result<XorName, PutError> {
-        let now = std::time::Instant::now();
+        let now = sn_networking::Instant::now();
         let (data_map_chunk, chunks) = encrypt(data)?;
 
         tracing::debug!("Encryption took: {:.2?}", now.elapsed());
@@ -187,7 +187,7 @@ impl Client {
     }
 
     pub(crate) async fn cost(&self, data: Bytes) -> Result<AttoTokens, PayError> {
-        let now = std::time::Instant::now();
+        let now = sn_networking::Instant::now();
         let (data_map_chunk, chunks) = encrypt(data)?;
 
         tracing::debug!("Encryption took: {:.2?}", now.elapsed());

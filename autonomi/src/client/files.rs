@@ -97,7 +97,7 @@ impl Client {
 
             // re-do encryption to get the correct map xorname here
             // this code needs refactor
-            let now = std::time::Instant::now();
+            let now = sn_networking::Instant::now();
             let (data_map_chunk, _) = encrypt(file_bytes).expect("TODO");
             tracing::debug!("Encryption took: {:.2?}", now.elapsed());
             let map_xor_name = *data_map_chunk.address().xorname();

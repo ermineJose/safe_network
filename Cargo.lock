@@ -586,6 +586,7 @@ dependencies = [
  "tower",
  "tracing",
  "url",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -1028,6 +1029,7 @@ dependencies = [
  "bip39",
  "blsttc",
  "bytes",
+ "console_error_panic_hook",
  "const-hex",
  "evmlib",
  "eyre",
@@ -1051,6 +1053,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "tracing-web",
  "walkdir",
  "wasm-bindgen-test",
  "xor_name",
@@ -9203,6 +9206,19 @@ checksum = "04659ddb06c87d233c566112c1c9c5b9e98256d9af50ec3bc9c8327f873a7568"
 dependencies = [
  "quote",
  "syn 2.0.77",
+]
+
+[[package]]
+name = "tracing-web"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9e6a141feebd51f8d91ebfd785af50fca223c570b86852166caa3b141defe7c"
+dependencies = [
+ "js-sys",
+ "tracing-core",
+ "tracing-subscriber",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

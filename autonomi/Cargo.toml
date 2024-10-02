@@ -44,6 +44,7 @@ tokio = { version = "1.35.0", features = ["sync"] }
 tracing = { version = "~0.1.26" }
 walkdir = "2.5.0"
 xor_name = "5.0.0"
+console_error_panic_hook = "0.1.7"
 
 [dev-dependencies]
 eyre = "0.6.5"
@@ -56,6 +57,7 @@ wasm-bindgen-test = "0.3.43"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # See https://github.com/sebcrozet/instant/blob/7bd13f51f5c930239fddc0476a837870fb239ed7/README.md#using-instant-for-a-wasm-platform-where-performancenow-is-not-available
 instant = { version = "0.1", features = [ "wasm-bindgen", "inaccurate" ] }
+tracing-web = "0.1.3"
 
 [lints]
 workspace = true

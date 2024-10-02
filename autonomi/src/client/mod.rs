@@ -12,9 +12,9 @@ pub mod vault;
 use std::{collections::HashSet, time::Duration};
 
 use libp2p::{identity::Keypair, Multiaddr};
-use sn_networking::{multiaddr_is_global, Network, NetworkBuilder, NetworkEvent};
+use sn_networking::{interval, multiaddr_is_global, Network, NetworkBuilder, NetworkEvent};
 use sn_protocol::{version::IDENTIFY_PROTOCOL_STR, CLOSE_GROUP_SIZE};
-use tokio::{sync::mpsc::Receiver, time::interval};
+use tokio::sync::mpsc::Receiver;
 
 /// Time before considering the connection timed out.
 pub const CONNECT_TIMEOUT_SECS: u64 = 20;
@@ -65,6 +65,7 @@ impl Client {
     /// # }
     /// ```
     pub async fn connect(peers: &[Multiaddr]) -> Result<Self, ConnectError> {
+        println!("cool");
         // Any global address makes the client non-local
         let local = !peers.iter().any(multiaddr_is_global);
 
@@ -73,7 +74,7 @@ impl Client {
         // Spawn task to dial to the given peers
         let network_clone = network.clone();
         let peers = peers.to_vec();
-        let _handle = tokio::spawn(async move {
+        let _handle = sn_networking::target_arch::spawn(async move {
             for addr in peers {
                 if let Err(err) = network_clone.dial(addr.clone()).await {
                     eprintln!("addr={addr} Failed to dial: {err:?}");
@@ -82,7 +83,7 @@ impl Client {
         });
 
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        tokio::spawn(handle_event_receiver(event_receiver, sender));
+        sn_networking::target_arch::spawn(handle_event_receiver(event_receiver, sender));
 
         receiver.await.expect("sender should not close")?;
 
@@ -92,7 +93,8 @@ impl Client {
 
 fn build_client_and_run_swarm(local: bool) -> (Network, Receiver<NetworkEvent>) {
     // TODO: `root_dir` is only used for nodes. `NetworkBuilder` should not require it.
-    let root_dir = std::env::temp_dir();
+    // let root_dir = std::env::temp_dir();
+    let root_dir = std::path::PathBuf::new();
     let network_builder = NetworkBuilder::new(Keypair::generate_ed25519(), local, root_dir);
 
     // TODO: Re-export `Receiver<T>` from `sn_networking`. Else users need to keep their `tokio` dependency in sync.
@@ -100,7 +102,7 @@ fn build_client_and_run_swarm(local: bool) -> (Network, Receiver<NetworkEvent>) 
     let (network, event_receiver, swarm_driver) =
         network_builder.build_client().expect("mdns to succeed");
 
-    let _swarm_driver = tokio::spawn(swarm_driver.run());
+    let _swarm_driver = sn_networking::target_arch::spawn(swarm_driver.run());
 
     (network, event_receiver)
 }
