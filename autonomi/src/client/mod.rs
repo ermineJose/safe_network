@@ -116,6 +116,8 @@ async fn handle_event_receiver(
     let mut unsupported_protocols = vec![];
 
     let mut timeout_timer = interval(Duration::from_secs(CONNECT_TIMEOUT_SECS));
+
+    #[cfg(not(target_arch = "wasm32"))]
     timeout_timer.tick().await;
 
     loop {
