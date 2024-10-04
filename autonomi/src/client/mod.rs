@@ -15,6 +15,34 @@ use libp2p::{identity::Keypair, Multiaddr};
 use sn_networking::{interval, multiaddr_is_global, Network, NetworkBuilder, NetworkEvent};
 use sn_protocol::{version::IDENTIFY_PROTOCOL_STR, CLOSE_GROUP_SIZE};
 use tokio::sync::mpsc::Receiver;
+use wasm_bindgen::prelude::*;
+use std::sync::Arc;
+use  js_sys::Array;
+
+#[wasm_bindgen]
+pub struct WasmMultiaddr {
+   inner: Multiaddr,
+}
+
+#[wasm_bindgen]
+impl WasmMultiaddr {
+    #[wasm_bindgen(constructor)]
+    pub fn new(addr: &str) -> Result<WasmMultiaddr, JsValue> {
+        addr.parse::<Multiaddr>()
+            .map(|inner| WasmMultiaddr { inner })
+            .map_err(|e| JsValue::from_str(&format!("Invalid Multiaddr: {}", e)))
+    }
+
+    pub fn to_string(&self) -> String {
+        self.inner.to_string()
+    }
+
+    // pub fn getInnerAddr(&self) -> String {
+
+    // }
+}
+
+
 
 /// Time before considering the connection timed out.
 pub const CONNECT_TIMEOUT_SECS: u64 = 20;
@@ -35,6 +63,7 @@ pub const CONNECT_TIMEOUT_SECS: u64 = 20;
 /// # }
 /// ```
 #[derive(Clone)]
+#[wasm_bindgen]
 pub struct Client {
     pub(crate) network: Network,
 }
@@ -50,6 +79,7 @@ pub enum ConnectError {
     TimedOutWithIncompatibleProtocol(HashSet<String>, String),
 }
 
+#[wasm_bindgen]
 impl Client {
     /// Connect to the network.
     ///
@@ -64,10 +94,14 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn connect(peers: &[Multiaddr]) -> Result<Self, ConnectError> {
+    #[wasm_bindgen(constructor)]
+    pub async fn connect(peers: Vec<WasmMultiaddr>) -> Result<Client , JsValue> {
         println!("cool");
         // Any global address makes the client non-local
-        let local = !peers.iter().any(multiaddr_is_global);
+            // let peers_input = peers.pop();
+            // let peers = peers_input.inner;
+            // let peers = peers.inner;
+            let local = !peers.iter().any(multiaddr_is_global);
 
         let (network, event_receiver) = build_client_and_run_swarm(local);
 
@@ -85,7 +119,9 @@ impl Client {
         let (sender, receiver) = futures::channel::oneshot::channel();
         sn_networking::target_arch::spawn(handle_event_receiver(event_receiver, sender));
 
-        receiver.await.expect("sender should not close")?;
+        // wasm_windgen doesn't support the expect, need to fix.
+        receiver.await;
+        
 
         Ok(Self { network })
     }
