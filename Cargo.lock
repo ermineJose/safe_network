@@ -1036,6 +1036,7 @@ dependencies = [
  "futures",
  "hex 0.4.3",
  "instant",
+ "js-sys",
  "libp2p 0.54.1",
  "rand 0.8.5",
  "rmp-serde",
@@ -1056,6 +1057,8 @@ dependencies = [
  "tracing-subscriber",
  "tracing-web",
  "walkdir",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "xor_name",
 ]
